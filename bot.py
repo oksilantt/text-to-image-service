@@ -17,7 +17,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
-# Авторизация Google Drive через переменную окружения
+# Авторизация Google Drive
 SCOPES = ['https://www.googleapis.com/auth/drive']
 service_account_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
 credentials = service_account.Credentials.from_service_account_info(
@@ -26,7 +26,7 @@ credentials = service_account.Credentials.from_service_account_info(
 )
 drive_service = build('drive', 'v3', credentials=credentials)
 
-# Получение ID папок и токена из переменных окружения
+# Переменные окружения
 TEXTS_FOLDER_ID = os.environ.get("READ_FOLDER_ID")
 IMAGES_FOLDER_ID = os.environ.get("WRITE_FOLDER_ID")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -40,7 +40,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = drive_service.files().list(
         q=f"'{TEXTS_FOLDER_ID}' in parents and mimeType='text/plain'",
-        fields="files(id, name)").execute()
+        fields="files(id, name)"
+    ).execute()
     files = results.get('files', [])
     if not files:
         await update.message.reply_text("Нет текстов.")
@@ -50,7 +51,6 @@ async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = file['id']
     file_name = file['name']
 
-    # Скачиваем текст в память
     request = drive_service.files().get_media(fileId=file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
@@ -85,7 +85,6 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     local_file = f"{code}{ext}"
     await file.download_to_drive(local_file)
 
-    # Загружаем в Google Drive
     file_metadata = {'name': local_file, 'parents': [IMAGES_FOLDER_ID]}
     media = MediaFileUpload(local_file, mimetype='image/jpeg')
     drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
@@ -94,17 +93,22 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Фото успешно загружено!")
     return ConversationHandler.END
 
-# Запуск бота
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+# Запуск
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler('gettext', get_text)],
-    states={
-        WAITING_PHOTO: [MessageHandler(filters.PHOTO, receive_photo)]
-    },
-    fallbacks=[CommandHandler('start', start)]
-)
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('gettext', get_text)],
+        states={
+            WAITING_PHOTO: [MessageHandler(filters.PHOTO, receive_photo)]
+        },
+        fallbacks=[CommandHandler('start', start)]
+    )
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(conv_handler)
-app.run_polling()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(conv_handler)
+
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
