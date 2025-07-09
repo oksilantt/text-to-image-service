@@ -20,7 +20,10 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 # Авторизация Google Drive через переменную окружения
 SCOPES = ['https://www.googleapis.com/auth/drive']
 service_account_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
-credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+credentials = service_account.Credentials.from_service_account_info(
+    service_account_info,
+    scopes=SCOPES
+)
 drive_service = build('drive', 'v3', credentials=credentials)
 
 # Получение ID папок и токена из переменных окружения
