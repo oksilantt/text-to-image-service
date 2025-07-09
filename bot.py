@@ -1,15 +1,107 @@
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import random
+import json
+import io
 
-# Получаем токен из переменных окружения для безопасности
-TOKEN = os.environ.get("BOT_TOKEN")
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    ConversationHandler
+)
+
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+
+# Авторизация Google Drive через переменную окружения
+SCOPES = ['https://www.googleapis.com/auth/drive']
+service_account_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
+credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+drive_service = build('drive', 'v3', credentials=credentials)
+
+# Получение ID папок и токена из переменных окружения
+TEXTS_FOLDER_ID = os.environ.get("READ_FOLDER_ID")
+IMAGES_FOLDER_ID = os.environ.get("WRITE_FOLDER_ID")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+WAITING_PHOTO = 1
+user_codes = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я работаю!")
+    await update.message.reply_text("Нажмите /gettext чтобы получить текст.")
 
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.run_polling()
+async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    results = drive_service.files().list(
+        q=f"'{TEXTS_FOLDER_ID}' in parents and mimeType='text/plain'",
+        fields="files(id, name)").execute()
+    files = results.get('files', [])
+    if not files:
+        await update.message.reply_text("Нет текстов.")
+        return ConversationHandler.END
 
+    file = random.choice(files)
+    file_id = file['id']
+    file_name = file['name']
+
+    # Скачиваем текст в память
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
+    fh.seek(0)
+    text = fh.read().decode('utf-8')
+
+    code = file_name.replace('.txt', '')
+    user_codes[update.effective_user.id] = code
+
+    await update.message.reply_text(f"{text}\n\nВаш код: {code}")
+    await update.message.reply_text("Теперь отправьте фото (JPG или PNG).")
+    return WAITING_PHOTO
+
+async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in user_codes:
+        await update.message.reply_text("Сначала получите текст с помощью /gettext.")
+        return ConversationHandler.END
+
+    code = user_codes[user_id]
+    photo = update.message.photo[-1] if update.message.photo else None
+    if not photo:
+        await update.message.reply_text("Отправьте изображение.")
+        return WAITING_PHOTO
+
+    file = await context.bot.get_file(photo.file_id)
+    ext = '.jpg'
+    local_file = f"{code}{ext}"
+    await file.download_to_drive(local_file)
+
+    # Загружаем в Google Drive
+    file_metadata = {'name': local_file, 'parents': [IMAGES_FOLDER_ID]}
+    media = MediaFileUpload(local_file, mimetype='image/jpeg')
+    drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+
+    os.remove(local_file)
+    await update.message.reply_text("Фото успешно загружено!")
+    return ConversationHandler.END
+
+# Запуск бота
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler('gettext', get_text)],
+    states={
+        WAITING_PHOTO: [MessageHandler(filters.PHOTO, receive_photo)]
+    },
+    fallbacks=[CommandHandler('start', start)]
+)
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(conv_handler)
+app.run_polling()
