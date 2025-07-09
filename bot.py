@@ -35,7 +35,7 @@ WAITING_PHOTO = 1
 user_codes = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Нажмите /gettext чтобы получить текст.")
+    await update.message.reply_text("Нажмите /gettext чтобы получить случайный текст.")
 
 async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = drive_service.files().list(
@@ -65,7 +65,7 @@ async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_codes[update.effective_user.id] = code
 
     await update.message.reply_text(f"{text}\n\nВаш код: {code}")
-    await update.message.reply_text("Теперь отправьте фото (JPG или PNG).")
+    await update.message.reply_text("Теперь отправьте фото написанного от руки текста (JPG или PNG).")
     return WAITING_PHOTO
 
 async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
