@@ -6,13 +6,8 @@ from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    filters,
-    ContextTypes,
-    ConversationHandler
+    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
+    filters, ContextTypes, ConversationHandler
 )
 
 from google.oauth2 import service_account
@@ -38,24 +33,17 @@ user_codes = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f""" 👋 Здравствуйте, {update.effective_user.first_name}!
+        f"""👋 Здравствуйте, {update.effective_user.first_name}!
 Я рада, что вы согласились поучаствовать в затее по переписыванию Википедии :)
 
-Вот что теперь нужно сделать:
-1️⃣ Нажмите /gettext . Вы получите случайный текст. 
+Вот что нужно:
+1️⃣ Нажмите /gettext — получите случайный текст. 
+✍️ Перепишите его от руки.
+📸 Сфотографируйте результат сверху, без теней. 
+📎 Отправьте фото (JPG/PNG) сюда в чат.
+✅ Дождитесь подтверждения загрузки и ответьте, сохранять ли ваш ник.
 
-✍️ Перепишите этот текст или его фрагмент. Писать можно на любой бумаге, если будут зачеркивания — нестрашно. Пожалуйста, не меняйте инструмент письма, то есть не переходите с ручки на карандаш посередине страницы. 
-Слова на иностранном языке лучше заменять на многоточия.
-
-📸 Сфотографируйте результат в хорошем освещении, чётко и сверху. Нужно, чтобы весь лист попадал в кадр. Постарайтесь избежать тени от телефона на листе.
-
-📎 Отправьте фото (JPG или PNG), как вы обычно делаете это в Telegram.
-
-✅ Дождитесь подтверждения загрузки.
-
-Спасибо!
-
-Приступим? Нажимайте /gettext 
+Нажмите /gettext, чтобы начать.
 """
     )
 
@@ -66,7 +54,7 @@ async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ).execute()
     files = results.get('files', [])
     if not files:
-        await update.message.reply_text("Нет текстов.")
+        await update.message.reply_text("Нет доступных текстов.")
         return ConversationHandler.END
 
     file = random.choice(files)
@@ -86,7 +74,7 @@ async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_codes[update.effective_user.id] = code
 
     await update.message.reply_text(f"{text}\n\nВаш код: {code}")
-    await update.message.reply_text("Теперь отправьте фото написанного от руки текста (JPG или PNG).")
+    await update.message.reply_text("Теперь отправьте фото написанного текста (JPG или PNG).")
     return WAITING_PHOTO
 
 async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -98,7 +86,7 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code = user_codes[user_id]
     photo = update.message.photo[-1] if update.message.photo else None
     if not photo:
-        await update.message.reply_text("Отправьте изображение.")
+        await update.message.reply_text("Пожалуйста, отправьте изображение.")
         return WAITING_PHOTO
 
     file = await context.bot.get_file(photo.file_id)
@@ -118,7 +106,6 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
     os.remove(filename)
 
-    # Вопрос о сохранении ника
     keyboard = [
         [InlineKeyboardButton("Да", callback_data="save_nick"),
          InlineKeyboardButton("Нет", callback_data="no_nick")]
@@ -126,31 +113,26 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        """Фото успешно загружено. Спасибо большое за вклад в проект!
-
-Если вы хотите изредка получать новости о проекте — нажмите «Да». Тогда мы сохраним ваш ник.
-
-Если не хотите — нажмите «Нет». В любом случае спасибо!""",
+        "Фото успешно загружено. Спасибо за вклад!\n\n"
+        "Хотите изредка получать новости о проекте?\n"
+        "Нажмите «Да», чтобы мы сохранили ваш ник.\n"
+        "Или «Нет» — и просто спасибо!",
         reply_markup=reply_markup
     )
     return WAITING_CONSENT
 
 async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("SHEET_ID:", SHEET_ID)
-    print("Email from creds:", credentials.service_account_email)
-
     query = update.callback_query
     await query.answer()
     user = query.from_user
-
     if query.data == "save_nick":
         username = user.username or f"id:{user.id}"
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sheet = sheets_client.open_by_key(SHEET_ID).worksheet("Лист1")
+        sheet = sheets_client.open_by_key(SHEET_ID).sheet1
         sheet.append_row([username, timestamp])
-        await query.edit_message_text("Спасибо! Мы сохранили ваш ник.")
+        await query.edit_message_text("Спасибо! Ник сохранён.")
     else:
-        await query.edit_message_text("Спасибо! Ваш вклад уже очень важен.")
+        await query.edit_message_text("Спасибо! Ваш вклад уже учтён.")
     return ConversationHandler.END
 
 def main():
@@ -167,7 +149,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
-
     app.run_polling()
 
 if __name__ == "__main__":
