@@ -20,7 +20,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import gspread
 
-# Авторизация Google Drive и Sheets
+# Авторизация Google
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
 service_account_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
 credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
@@ -38,7 +38,7 @@ user_codes = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"""👋 Здравствуйте, {update.effective_user.first_name}!
+        f""" 👋 Здравствуйте, {update.effective_user.first_name}!
 Я рада, что вы согласились поучаствовать в затее по переписыванию Википедии :)
 
 Вот что теперь нужно сделать:
@@ -136,9 +136,13 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_CONSENT
 
 async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("SHEET_ID:", SHEET_ID)
+    print("Email from creds:", credentials.service_account_email)
+
     query = update.callback_query
     await query.answer()
     user = query.from_user
+
     if query.data == "save_nick":
         username = user.username or f"id:{user.id}"
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
