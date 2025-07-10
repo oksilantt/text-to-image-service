@@ -2,6 +2,7 @@ import os
 import random
 import json
 import io
+import datetime
 
 from telegram import Update
 from telegram.ext import (
@@ -17,19 +18,22 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
-# Авторизация Google Drive
-SCOPES = ['https://www.googleapis.com/auth/drive']
+# Авторизация Google Drive и Google Sheets
+SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
 service_account_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
 credentials = service_account.Credentials.from_service_account_info(
     service_account_info,
     scopes=SCOPES
 )
+
 drive_service = build('drive', 'v3', credentials=credentials)
+sheets_service = build('sheets', 'v4', credentials=credentials)
 
 # Переменные окружения
 TEXTS_FOLDER_ID = os.environ.get("READ_FOLDER_ID")
 IMAGES_FOLDER_ID = os.environ.get("WRITE_FOLDER_ID")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+SPREADSHEET_ID = '1Zuz6XPL6vaglPLNc0f_3Q9QdEVuq2ctjMrxDsDnhDdQ'  # <-- 
 
 WAITING_PHOTO = 1
 user_codes = {}
@@ -54,7 +58,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 Спасибо!
 
 Приступим? Нажимайте /gettext 
-
 """
     )
 
@@ -84,6 +87,22 @@ async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     code = file_name.replace('.txt', '')
     user_codes[update.effective_user.id] = code
+
+    # Добавим данные в таблицу
+    user_data = [
+        str(update.effective_user.id),
+        update.effective_user.username or '',
+        update.effective_user.first_name or '',
+        code,
+        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ]
+    sheets_service.spreadsheets().values().append(
+        spreadsheetId=SPREADSHEET_ID,
+        range='A1',
+        valueInputOption='USER_ENTERED',
+        insertDataOption='INSERT_ROWS',
+        body={'values': [user_data]}
+    ).execute()
 
     await update.message.reply_text(f"{text}\n\nВаш код: {code}")
     await update.message.reply_text("Теперь отправьте фото написанного от руки текста (JPG или PNG).")
