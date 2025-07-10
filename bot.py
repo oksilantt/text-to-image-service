@@ -38,7 +38,7 @@ user_codes = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f""" 👋 Здравствуйте, {update.effective_user.first_name}!
+        f"""👋 Здравствуйте, {update.effective_user.first_name}!
 Я рада, что вы согласились поучаствовать в затее по переписыванию Википедии :)
 
 Вот что теперь нужно сделать:
@@ -142,7 +142,7 @@ async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "save_nick":
         username = user.username or f"id:{user.id}"
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-   sheet = sheets_client.open_by_key(SHEET_ID).worksheet("Лист1")
+        sheet = sheets_client.open_by_key(SHEET_ID).worksheet("Лист1")
         sheet.append_row([username, timestamp])
         await query.edit_message_text("Спасибо! Мы сохранили ваш ник.")
     else:
