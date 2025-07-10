@@ -142,7 +142,7 @@ async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "save_nick":
         username = user.username or f"id:{user.id}"
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sheet = sheets_client.open_by_key(SHEET_ID).sheet1
+   sheet = sheets_client.open_by_key(SHEET_ID).worksheet("Лист1")
         sheet.append_row([username, timestamp])
         await query.edit_message_text("Спасибо! Мы сохранили ваш ник.")
     else:
