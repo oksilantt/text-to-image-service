@@ -36,20 +36,19 @@ user_codes = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-     f"""👋 Доброго дня, {update.effective_user.first_name}!
+        f"""👋 Доброго дня, {update.effective_user.first_name}!
 Спасибо, что согласились поучаствовать в моём проекте.
 Что нужно сделать:
 1️⃣ Нажмите /gettext — получите случайный фрагмент. 
-Перепишите, пожалуйста, выпавший вам текст. 
 
-Писать можно на любой бумаге, если будут зачеркивания — нестрашно. 
+Перепишите, пожалуйста, выпавший вам текст. Писать можно на любой бумаге, если будут зачеркивания — нестрашно. 
 Пожалуйста, не меняйте инструмент письма, то есть не переходите с ручки на карандаш посередине страницы. 
 Слова на иностранном языке лучше заменять на многоточия.
 📸 Сфотографируйте результат в хорошем освещении и чётко сверху. Нужно, чтобы весь лист попадал в кадр.
 📎 Отправьте фото (JPG или PNG), как вы обычно делаете это в Telegram.
 ✅ Дождитесь подтверждения загрузки.
 """
-)
+    )
 
 async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = drive_service.files().list(
@@ -96,28 +95,34 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     file = await context.bot.get_file(photo.file_id)
     ext = '.jpg'
-    local_file = f"{code}{ext}"
-    await file.download_to_drive(local_file)
 
-    file_metadata = {'name': local_file, 'parents': [IMAGES_FOLDER_ID]}
-    media = MediaFileUpload(local_file, mimetype='image/jpeg')
+    # Проверка на существующие файлы с таким кодом
+    existing_files = drive_service.files().list(
+        q=f"'{IMAGES_FOLDER_ID}' in parents and name contains '{code}' and trashed = false",
+        fields="files(name)"
+    ).execute().get("files", [])
+
+    suffix = len(existing_files) + 1
+    filename = f"{code}_{suffix}{ext}"
+
+    await file.download_to_drive(filename)
+
+    file_metadata = {'name': filename, 'parents': [IMAGES_FOLDER_ID]}
+    media = MediaFileUpload(filename, mimetype='image/jpeg')
     drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
-    os.remove(local_file)
+    os.remove(filename)
     await update.message.reply_text("""Фото успешно загружено! Спасибо большое за ваш вклад в проект!
- Вы приблизили исполнение моей мечты — создание kraken-модели для современного русского языка.
-И в результате мы сможем чтобы распознавать кириллицу с высокой точностью;""")
+Вы приблизили исполнение моей мечты — создание kraken-модели для современного русского языка.
+В результате мы сможем распознавать кириллицу с высокой точностью.""")
     return ConversationHandler.END
 
-# Запуск
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('gettext', get_text)],
-        states={
-            WAITING_PHOTO: [MessageHandler(filters.PHOTO, receive_photo)]
-        },
+        states={WAITING_PHOTO: [MessageHandler(filters.PHOTO, receive_photo)]},
         fallbacks=[CommandHandler('start', start)]
     )
 
