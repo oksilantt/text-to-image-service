@@ -100,9 +100,9 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
 
     os.remove(local_file)
-    await update.message.reply_text("Фото успешно загружено! Спасибо большое за ваш вклад в проект!"
-"Вы приблизили исполнение моей мечты — создание kraken-модели для современного русского языка," 
-"чтобы распознавать кириллицу с высокой точностью;")
+    await update.message.reply_text("""Фото успешно загружено! Спасибо большое за ваш вклад в проект!
+ Вы приблизили исполнение моей мечты — создание kraken-модели для современного русского языка.
+И в результате мы сможем чтобы распознавать кириллицу с высокой точностью;""")
     return ConversationHandler.END
 
 # Запуск
