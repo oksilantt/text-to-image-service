@@ -1,6 +1,3 @@
-ничего не понимаю вот мой код сейчас
-что куда надо вставить?
-
 import os
 import random
 import json
