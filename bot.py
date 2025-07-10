@@ -32,6 +32,7 @@ user_codes = {}
 user_photo_counts = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("‼️ DEBUG UPDATE (start):", update)
     await update.message.reply_text(
         f"""Привет, {update.effective_user.first_name}!
 Это бот проекта рукописной Википедии.
@@ -43,6 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("‼️ DEBUG UPDATE (gettext):", update)
     results = drive_service.files().list(
         q=f"'{TEXTS_FOLDER_ID}' in parents and mimeType='text/plain' and trashed = false",
         fields="files(id, name)"
@@ -76,6 +78,7 @@ async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_PHOTO
 
 async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("‼️ DEBUG UPDATE (photo):", update)
     user_id = update.effective_user.id
     if user_id not in user_codes:
         await update.message.reply_text("Сначала получите текст с помощью /gettext.")
@@ -105,6 +108,7 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("‼️ DEBUG UPDATE (id):", update)
     chat_id = update.effective_chat.id
     await update.message.reply_text(f"chat_id этого чата: {chat_id}")
 
