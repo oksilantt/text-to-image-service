@@ -104,6 +104,10 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Фото принято и отправлено. Спасибо!")
     return ConversationHandler.END
 
+async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(f"chat_id этого чата: {chat_id}")
+
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -114,6 +118,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("id", get_chat_id))
     app.add_handler(conv_handler)
     app.run_polling()
 
