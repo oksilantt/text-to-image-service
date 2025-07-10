@@ -2,7 +2,7 @@ import os
 import random
 import io
 import json
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     ContextTypes, ConversationHandler, filters
@@ -16,7 +16,7 @@ load_dotenv()
 
 # Переменные окружения
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ARCHIVE_CHAT_ID = os.environ.get("ARCHIVE_CHAT_ID")  # Пример: -1001234567890
+ARCHIVE_CHAT_ID = os.environ.get("ARCHIVE_CHAT_ID")  # Пример: -1002722164466
 TEXTS_FOLDER_ID = os.environ.get("READ_FOLDER_ID")
 GOOGLE_CREDENTIALS = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
 
@@ -94,23 +94,19 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_PHOTO
 
     file = await context.bot.get_file(photo.file_id)
-    file_bytes = await file.download_as_bytearray()
+    filename = f"{code}_{suffix}.jpg"
+    await file.download_to_drive(filename)
 
-    caption = f"{code}_{suffix}"
+    with open(filename, "rb") as img:
+        await context.bot.send_photo(
+            chat_id=ARCHIVE_CHAT_ID,
+            photo=InputFile(img),
+            caption=f"{code}_{suffix}"
+        )
 
-    await context.bot.send_photo(
-        chat_id=ARCHIVE_CHAT_ID,
-        photo=file_bytes,
-        caption=caption
-    )
-
+    os.remove(filename)
     await update.message.reply_text("Фото принято и отправлено. Спасибо!")
     return ConversationHandler.END
-
-async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("‼️ DEBUG UPDATE (id):", update)
-    chat_id = update.effective_chat.id
-    await update.message.reply_text(f"chat_id этого чата: {chat_id}")
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -122,7 +118,6 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("id", get_chat_id))
     app.add_handler(conv_handler)
     app.run_polling()
 
