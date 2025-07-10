@@ -1,92 +1,78 @@
 import os
 import random
-import json
 import io
-
+import json
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-    ConversationHandler
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    ContextTypes, ConversationHandler, filters
 )
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload
+from dotenv import load_dotenv
+load_dotenv()
 
-# Авторизация Google Drive
-SCOPES = ['https://www.googleapis.com/auth/drive']
-service_account_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
+# Переменные окружения
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+ARCHIVE_CHAT_ID = os.environ.get("ARCHIVE_CHAT_ID")  # Пример: -1001234567890
+TEXTS_FOLDER_ID = os.environ.get("READ_FOLDER_ID")
+GOOGLE_CREDENTIALS = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
+
+# Google Drive client
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 credentials = service_account.Credentials.from_service_account_info(
-    service_account_info,
-    scopes=SCOPES
+    GOOGLE_CREDENTIALS, scopes=SCOPES
 )
 drive_service = build('drive', 'v3', credentials=credentials)
 
-# Переменные окружения
-TEXTS_FOLDER_ID = os.environ.get("READ_FOLDER_ID")
-IMAGES_FOLDER_ID = os.environ.get("WRITE_FOLDER_ID")
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-
 WAITING_PHOTO = 1
 user_codes = {}
+user_photo_counts = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f""" 👋 Здравствуйте, {update.effective_user.first_name}!
-Я рада, что вы согласились поучаствовать в затее по переписыванию Википедии :)
+        f"""Привет, {update.effective_user.first_name}!
+Это бот проекта рукописной Википедии.
 
-Вот что теперь нужно сделать:
-1️⃣ Нажмите /gettext . Вы получите случайный текст. 
-
-✍️ Перепишите этот текст или его фрагмент. Писать можно на любой бумаге, если будут зачеркивания — нестрашно. Пожалуйста, не меняйте инструмент письма, то есть не переходите с ручки на карандаш посередине страницы. 
-Слова на иностранном языке лучше заменять на многоточия.
-
-📸 Сфотографируйте результат в хорошем освещении, чётко и сверху. Нужно, чтобы весь лист попадал в кадр. Постарайтесь избежать тени от телефона на листе.
-
-📎 Отправьте фото (JPG или PNG), как вы обычно делаете это в Telegram.
-
-✅ Дождитесь подтверждения загрузки.
-
-Спасибо!
-
-Приступим? Нажимайте /gettext 
-
+Нажмите /gettext — получите текст.
+Перепишите его от руки.
+Пришлите фото написанного.
 """
     )
 
 async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = drive_service.files().list(
-        q=f"'{TEXTS_FOLDER_ID}' in parents and mimeType='text/plain'",
+        q=f"'{TEXTS_FOLDER_ID}' in parents and mimeType='text/plain' and trashed = false",
         fields="files(id, name)"
     ).execute()
     files = results.get('files', [])
     if not files:
-        await update.message.reply_text("Нет текстов.")
+        await update.message.reply_text("Нет доступных текстов.")
         return ConversationHandler.END
 
     file = random.choice(files)
     file_id = file['id']
     file_name = file['name']
+    code = file_name.replace('.txt', '')
 
     request = drive_service.files().get_media(fileId=file_id)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, request)
     done = False
     while not done:
-        status, done = downloader.next_chunk()
+        _, done = downloader.next_chunk()
 
     fh.seek(0)
     text = fh.read().decode('utf-8')
 
-    code = file_name.replace('.txt', '')
-    user_codes[update.effective_user.id] = code
+    user_id = update.effective_user.id
+    user_codes[user_id] = code
+    user_photo_counts[user_id] = 0
 
     await update.message.reply_text(f"{text}\n\nВаш код: {code}")
-    await update.message.reply_text("Теперь отправьте фото написанного от руки текста (JPG или PNG).")
+    await update.message.reply_text("Теперь отправьте фото.")
     return WAITING_PHOTO
 
 async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,34 +82,26 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     code = user_codes[user_id]
+    user_photo_counts[user_id] += 1
+    suffix = user_photo_counts[user_id]
+
     photo = update.message.photo[-1] if update.message.photo else None
     if not photo:
-        await update.message.reply_text("Отправьте изображение.")
+        await update.message.reply_text("Пожалуйста, отправьте изображение.")
         return WAITING_PHOTO
 
     file = await context.bot.get_file(photo.file_id)
-    ext = '.jpg'
+    file_bytes = await file.download_as_bytearray()
 
-    # Проверка на существующие файлы с таким кодом
-    existing_files = drive_service.files().list(
-        q=f"'{IMAGES_FOLDER_ID}' in parents and name contains '{code}' and trashed = false",
-        fields="files(name)"
-    ).execute().get("files", [])
+    caption = f"{code}_{suffix}"
 
-    suffix = len(existing_files) + 1
-    filename = f"{code}_{suffix}{ext}"
+    await context.bot.send_photo(
+        chat_id=ARCHIVE_CHAT_ID,
+        photo=file_bytes,
+        caption=caption
+    )
 
-    await file.download_to_drive(filename)
-
-    file_metadata = {'name': filename, 'parents': [IMAGES_FOLDER_ID]}
-    media = MediaFileUpload(filename, mimetype='image/jpeg')
-    drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-
-    os.remove(filename)
-    await update.message.reply_text("""Фото успешно загружено. 
-
-Спасибо большое за ваш вклад в проект! 
-Вы приблизили создание kraken-модели, которая сможет «читать» рукописи на современном русском языке.""")
+    await update.message.reply_text("Фото принято и отправлено. Спасибо!")
     return ConversationHandler.END
 
 def main():
@@ -137,7 +115,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
-
     app.run_polling()
 
 if __name__ == "__main__":
