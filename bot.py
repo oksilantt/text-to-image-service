@@ -2,13 +2,14 @@ import os
 import random
 import json
 import io
-import datetime
+from datetime import datetime
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
     ContextTypes,
     ConversationHandler
@@ -17,25 +18,22 @@ from telegram.ext import (
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+import gspread
 
-# Авторизация Google Drive и Google Sheets
+# Авторизация Google Drive и Sheets
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
 service_account_info = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
-credentials = service_account.Credentials.from_service_account_info(
-    service_account_info,
-    scopes=SCOPES
-)
-
+credentials = service_account.Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=credentials)
-sheets_service = build('sheets', 'v4', credentials=credentials)
+sheets_client = gspread.authorize(credentials)
 
 # Переменные окружения
 TEXTS_FOLDER_ID = os.environ.get("READ_FOLDER_ID")
 IMAGES_FOLDER_ID = os.environ.get("WRITE_FOLDER_ID")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-SPREADSHEET_ID = '1Zuz6XPL6vaglPLNc0f_3Q9QdEVuq2ctjMrxDsDnhDdQ'  # <-- 
+SHEET_ID = os.environ.get("SHEET_ID")
 
-WAITING_PHOTO = 1
+WAITING_PHOTO, WAITING_CONSENT = range(2)
 user_codes = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -81,28 +79,11 @@ async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     done = False
     while not done:
         status, done = downloader.next_chunk()
-
     fh.seek(0)
     text = fh.read().decode('utf-8')
 
     code = file_name.replace('.txt', '')
     user_codes[update.effective_user.id] = code
-
-    # Добавим данные в таблицу
-    user_data = [
-        str(update.effective_user.id),
-        update.effective_user.username or '',
-        update.effective_user.first_name or '',
-        code,
-        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    ]
-    sheets_service.spreadsheets().values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range='A1',
-        valueInputOption='USER_ENTERED',
-        insertDataOption='INSERT_ROWS',
-        body={'values': [user_data]}
-    ).execute()
 
     await update.message.reply_text(f"{text}\n\nВаш код: {code}")
     await update.message.reply_text("Теперь отправьте фото написанного от руки текста (JPG или PNG).")
@@ -123,7 +104,6 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(photo.file_id)
     ext = '.jpg'
 
-    # Проверка на существующие файлы с таким кодом
     existing_files = drive_service.files().list(
         q=f"'{IMAGES_FOLDER_ID}' in parents and name contains '{code}' and trashed = false",
         fields="files(name)"
@@ -131,18 +111,42 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     suffix = len(existing_files) + 1
     filename = f"{code}_{suffix}{ext}"
-
     await file.download_to_drive(filename)
 
     file_metadata = {'name': filename, 'parents': [IMAGES_FOLDER_ID]}
     media = MediaFileUpload(filename, mimetype='image/jpeg')
     drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-
     os.remove(filename)
-    await update.message.reply_text("""Фото успешно загружено. 
 
-Спасибо большое за ваш вклад в проект! 
-Вы приблизили создание kraken-модели, которая сможет «читать» рукописи на современном русском языке.""")
+    # Вопрос о сохранении ника
+    keyboard = [
+        [InlineKeyboardButton("Да", callback_data="save_nick"),
+         InlineKeyboardButton("Нет", callback_data="no_nick")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        """Фото успешно загружено. Спасибо большое за вклад в проект!
+
+Если вы хотите изредка получать новости о проекте — нажмите «Да». Тогда мы сохраним ваш ник.
+
+Если не хотите — нажмите «Нет». В любом случае спасибо!""",
+        reply_markup=reply_markup
+    )
+    return WAITING_CONSENT
+
+async def handle_consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user = query.from_user
+    if query.data == "save_nick":
+        username = user.username or f"id:{user.id}"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sheet = sheets_client.open_by_key(SHEET_ID).sheet1
+        sheet.append_row([username, timestamp])
+        await query.edit_message_text("Спасибо! Мы сохранили ваш ник.")
+    else:
+        await query.edit_message_text("Спасибо! Ваш вклад уже очень важен.")
     return ConversationHandler.END
 
 def main():
@@ -150,7 +154,10 @@ def main():
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('gettext', get_text)],
-        states={WAITING_PHOTO: [MessageHandler(filters.PHOTO, receive_photo)]},
+        states={
+            WAITING_PHOTO: [MessageHandler(filters.PHOTO, receive_photo)],
+            WAITING_CONSENT: [CallbackQueryHandler(handle_consent)]
+        },
         fallbacks=[CommandHandler('start', start)]
     )
 
