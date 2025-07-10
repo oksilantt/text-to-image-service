@@ -48,7 +48,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✅ Дождитесь подтверждения загрузки.
 """
 )
-    )
 
 async def get_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = drive_service.files().list(
